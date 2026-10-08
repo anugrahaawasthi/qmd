@@ -649,13 +649,23 @@ export class LlamaCpp implements LLM {
     if (!this.llama) {
       const gpuMode = resolveLlamaGpuMode();
 
-      const loadLlama = async (gpu: LlamaGpuMode) =>
-        await getLlama({
+      const loadLlama = async (gpu: LlamaGpuMode) => {
+        // Prefer the "last build" binaries (covers local builds with newer
+        // llama.cpp than the npm-prebuilt release — e.g. gemma-embedding2).
+        try {
+          return await getLlama("lastBuild", {
+            logLevel: LlamaLogLevel.error,
+          });
+        } catch {
+          // no local build present — fall through to the default resolution
+        }
+        return await getLlama({
           build: allowBuild ? "autoAttempt" : "never",
           logLevel: LlamaLogLevel.error,
           gpu,
           skipDownload: !allowBuild,
         });
+      };
 
       let llama: Llama;
       if (gpuMode === false) {
@@ -1072,7 +1082,10 @@ export class LlamaCpp implements LLM {
 
   async embed(text: string, options: EmbedOptions = {}): Promise<EmbeddingResult | null> {
     const model = options.model ?? this.embedModelUri;
-    if (!localModelsEnabled() && isLocalEmbeddingModel(model)) {
+    // An explicitly configured embed API endpoint serves the model remotely —
+    // the model URI is just a label; route to the API instead of failing.
+    const externalApiConfigured = !!process.env.QMD_EMBED_API_BASE_URL;
+    if (!localModelsEnabled() && isLocalEmbeddingModel(model) && !externalApiConfigured) {
       throw new Error("Local embedding models are disabled. Set QMD_ENABLE_LOCAL_MODELS=1 to use local GGUF models.");
     }
     if (!isLocalEmbeddingModel(model)) {
@@ -1110,7 +1123,8 @@ export class LlamaCpp implements LLM {
    */
   async embedBatch(texts: string[], options: EmbedOptions = {}): Promise<(EmbeddingResult | null)[]> {
     const model = options.model ?? this.embedModelUri;
-    if (!localModelsEnabled() && isLocalEmbeddingModel(model)) {
+    const externalApiConfigured = !!process.env.QMD_EMBED_API_BASE_URL;
+    if (!localModelsEnabled() && isLocalEmbeddingModel(model) && !externalApiConfigured) {
       throw new Error("Local embedding models are disabled. Set QMD_ENABLE_LOCAL_MODELS=1 to use local GGUF models.");
     }
     if (!isLocalEmbeddingModel(model)) {

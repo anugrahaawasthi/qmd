@@ -3182,7 +3182,15 @@ if (isMain) {
         const maxDocsPerBatch = parseEmbedBatchOption("maxDocsPerBatch", cli.values["max-docs-per-batch"]);
         const maxBatchMb = parseEmbedBatchOption("maxBatchBytes", cli.values["max-batch-mb"]);
         const embedChunkStrategy = parseChunkStrategy(cli.values["chunk-strategy"]);
-        await vectorIndex(DEFAULT_EMBED_MODEL_URI, !!cli.values.force, {
+        // Resolve embed model: explicit env > config models.embed > default,
+        // matching LlamaCpp's constructor precedence so index-time and
+        // query-time embeddings use the same model.
+        let embedModelUri = DEFAULT_EMBED_MODEL_URI;
+        try {
+          const embedConfig = loadConfig() as unknown as { models?: { embed?: string } };
+          embedModelUri = process.env.QMD_EMBED_MODEL || embedConfig?.models?.embed || DEFAULT_EMBED_MODEL_URI;
+        } catch { /* config optional */ }
+        await vectorIndex(embedModelUri, !!cli.values.force, {
           maxDocsPerBatch,
           maxBatchBytes: maxBatchMb === undefined ? undefined : maxBatchMb * 1024 * 1024,
           chunkStrategy: embedChunkStrategy,

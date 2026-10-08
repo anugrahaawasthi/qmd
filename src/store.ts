@@ -4117,7 +4117,7 @@ export async function hybridQuery(
       if (!embedding) continue;
 
       const vecResults = await store.searchVec(
-        vecQueries[i]!.text, DEFAULT_EMBED_MODEL, 20, collection,
+        vecQueries[i]!.text, llm.embedModelName, 20, collection,
         undefined, embedding
       );
       if (vecResults.length > 0) {
@@ -4335,6 +4335,11 @@ export async function vectorSearchQuery(
   const collection = options?.collection;
   const intent = options?.intent;
 
+  // Resolve embed model consistently with the embed command: env > default.
+  // Query-time vectors must be labeled with the same model name used at
+  // index-time or searchVec finds nothing.
+  const embedModelName = process.env.QMD_EMBED_MODEL || DEFAULT_EMBED_MODEL;
+
   const hasVectors = !!store.db.prepare(
     `SELECT name FROM sqlite_master WHERE type='table' AND name='vectors_vec'`
   ).get();
@@ -4350,7 +4355,7 @@ export async function vectorSearchQuery(
   const queryTexts = [query, ...vecExpanded.map(q => q.query)];
   const allResults = new Map<string, VectorSearchResult>();
   for (const q of queryTexts) {
-    const vecResults = await store.searchVec(q, DEFAULT_EMBED_MODEL, limit, collection);
+    const vecResults = await store.searchVec(q, embedModelName, limit, collection);
     for (const r of vecResults) {
       const existing = allResults.get(r.filepath);
       if (!existing || r.score > existing.score) {
